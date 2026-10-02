@@ -1,0 +1,11 @@
+{
+  "name": "finergy-fondy-data",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "update": "node scripts/update-fondy-xml.mjs && node scripts/update-extra-funds.mjs"
+  },
+  "dependencies": {
+    "fflate": "^0.8.3"
+  }
+}

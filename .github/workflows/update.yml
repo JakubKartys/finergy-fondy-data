@@ -1,0 +1,53 @@
+name: Aktualizace fondů
+
+on:
+  schedule:
+    - cron: '0 5 * * *' # 7:00 letního / 6:00 zimního času (GitHub může běh zpozdit)
+    - cron: '0 17 * * *' # 19:00 letního / 18:00 zimního času
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/**
+      - .github/workflows/update.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-funds
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # The XML goes first: the extra-funds script adds only funds missing from it.
+      - name: Fondy z EIC (fondy.xml)
+        run: node scripts/update-fondy-xml.mjs
+
+      - name: Fondy Conseq a INVESTIKA
+        run: node scripts/update-extra-funds.mjs
+
+      - name: Uložit změny
+        run: |
+          if git diff --quiet -- data; then
+            echo "Ceny fondů se nezměnily."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898333+github-actions[bot]@users.noreply.github.com"
+          git add data
+          git commit -m "Aktualizace dat fondů $(date -u +'%F %H:%M') UTC"
+          git pull --rebase
+          git push
