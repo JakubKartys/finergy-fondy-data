@@ -13,7 +13,8 @@ const CONCURRENCY = 4
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
-async function fetchRetry(url, init = {}, tries = 3) {
+// Five tries with growing pauses (2, 5, 10, 20 s) ride out short outages of the source sites.
+async function fetchRetry(url, init = {}, tries = 5) {
   for (let i = 1; ; i++) {
     try {
       const res = await fetch(url, { ...init, headers: { ...UA, ...init.headers } })
@@ -21,7 +22,7 @@ async function fetchRetry(url, init = {}, tries = 3) {
       return res
     } catch (e) {
       if (i >= tries) throw new Error(`${url}: ${e.message}`)
-      await sleep(1000 * i)
+      await sleep([2000, 5000, 10000, 20000][i - 1] ?? 20000)
     }
   }
 }
@@ -285,13 +286,36 @@ async function investikaFunds() {
 const known = xmlKeys()
 const funds = []
 
-const investika = await investikaFunds()
-console.log(`INVESTIKA: ${investika.length} tříd fondů`)
-funds.push(...investika)
+// A provider that stays down keeps its last saved funds, so the XML update still gets committed.
+const previous = (() => {
+  try {
+    return JSON.parse(readFileSync(OUT, 'utf8')).funds
+  } catch {
+    return []
+  }
+})()
+const warnings = []
+async function orPrevious(provider, load) {
+  try {
+    return { ok: true, value: await load() }
+  } catch (e) {
+    const kept = previous.filter((f) => f.provider === provider)
+    warnings.push(`${provider}: ${e.message} – ponechávám ${kept.length} fondů z minulé aktualizace`)
+    console.warn(`::warning::${warnings.at(-1)}`)
+    return { ok: false, value: kept }
+  }
+}
 
-const listing = await conseqListing()
-const missing = listing.filter((r) => !known.has(`${r.isin}|${r.currency}`) && !funds.some((f) => f.isin === r.isin && f.currency === r.currency))
-console.log(`Conseq: ${listing.length} fondů, v XML chybí ${missing.length}`)
+const investika = await orPrevious('investika', investikaFunds)
+console.log(`INVESTIKA: ${investika.value.length} tříd fondů`)
+funds.push(...investika.value)
+
+const listing = await orPrevious('conseq', conseqListing)
+if (!listing.ok) funds.push(...listing.value)
+const missing = listing.ok
+  ? listing.value.filter((r) => !known.has(`${r.isin}|${r.currency}`) && !funds.some((f) => f.isin === r.isin && f.currency === r.currency))
+  : []
+if (listing.ok) console.log(`Conseq: ${listing.value.length} fondů, v XML chybí ${missing.length}`)
 
 let done = 0
 const failed = []
