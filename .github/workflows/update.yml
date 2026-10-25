@@ -33,7 +33,9 @@ jobs:
       - run: npm ci
 
       # The XML goes first: the extra-funds script adds only funds missing from it.
+      # An EIC outage keeps the previous fondy.xml; the Conseq/INVESTIKA update still runs.
       - name: Fondy z EIC (fondy.xml)
+        continue-on-error: true
         run: node scripts/update-fondy-xml.mjs
 
       - name: Fondy Conseq a INVESTIKA
